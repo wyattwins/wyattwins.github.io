@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RainbowFile Studio for Gizmo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/libs/fflate.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        :root { --primary: #6366f1; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --success: #22c55e; --error: #ef4444; --accent: #f59e0b; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: var(--card); padding: 1.5rem; border-radius: 16px; text-align: center; max-width: 600px; width: 100%; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); position: relative; }
+        
+        .drop-zone { border: 2px dashed #475569; border-radius: 12px; padding: 25px; margin: 10px 0; cursor: pointer; background: #1e293b; transition: 0.3s; }
+        .drop-zone:hover { border-color: var(--primary); background: #262f45; }
+        
+        #health-status { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-top: 10px; padding: 6px 16px; border-radius: 20px; background: rgba(0,0,0,0.4); border: 1px solid #334155; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #475569; }
+        .dot.healthy { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .dot.error { background: var(--error); box-shadow: 0 0 10px var(--error); }
+
+        canvas#outputCanvas { image-rendering: pixelated; border: 2px solid var(--primary); width: 220px; height: 220px; display: block; margin: 15px auto; background: #000; border-radius: 4px; }
+        
+        #viewer-container { width: 100%; height: 400px; margin-top: 15px; background: #f1f5f9; border-radius: 12px; display: none; overflow: hidden; position: relative; border: 2px solid #334155; }
+        
+        .control-panel { background: #ffffff; color: #1e293b; padding: 15px; border-radius: 12px; margin-top: 10px; text-align: left; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .slider-group { margin-bottom: 12px; }
+        .slider-group label { display: block; font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #64748b; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--primary); }
+        
+        .code-block { background: #000; color: #a5b4fc; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.7rem; text-align: left; overflow-x: auto; margin-top: 15px; border: 1px solid #312e81; cursor: copy; position: relative; }
+        .code-block:after { content: "COPY FOR GIZMO"; position: absolute; right: 10px; top: 10px; font-size: 0.6rem; color: #4ade80; opacity: 0.6; }
+
+        .btn { background: var(--primary); color: white; padding: 12px; border-radius: 8px; border: none; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; transition: filter 0.2s; }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+        
+        .beta-tag { font-size: 0.7rem; color: #94a3b8; display: block; margin-top: 8px; font-style: italic; line-height: 1.3; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+        .modal { background: var(--card); border: 1px solid #334155; padding: 2rem; border-radius: 16px; width: 90%; max-width: 400px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+        .modal h3 { margin-top: 0; color: var(--text); }
+        .rename-input-container { position: relative; margin: 15px 0; display: flex; align-items: center; background: #0f172a; border-radius: 8px; border: 1px solid #475569; padding: 0 12px; }
+        .rename-input-container:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        #rename-input { background: transparent; border: none; color: white; padding: 12px 0; font-size: 1rem; width: 100%; outline: none; }
+        .suffix-lock { color: var(--accent); font-weight: bold; pointer-events: none; user-select: none; margin-left: 4px; }
+        
+        .tos-container { background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 20px; text-align: left; }
+        .tos-checkbox-wrapper { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+        .tos-checkbox-wrapper input { cursor: pointer; margin-top: 4px; }
+        .tos-text { font-size: 0.75rem; color: #94a3b8; line-height: 1.4; }
+
+        .modal-actions { display: flex; gap: 10px; }
+        .modal-btn { flex: 1; padding: 10px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; }
+        .btn-cancel { background: #334155; color: white; }
+        .btn-confirm { background: var(--success); color: white; }
+
+        /* Credits UI Styles */
+        .credits-btn { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 6px 12px; border-radius: 20px; font-size: 0.7rem; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        .credits-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); border-color: var(--primary); }
+        .credits-list { text-align: left; font-size: 0.85rem; color: #cbd5e1; list-style: none; padding: 0; margin: 20px 0; }
+        .credits-list li { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+        .credits-list li a { color: var(--primary); text-decoration: none; font-weight: bold; }
+        .credits-list li a:hover { text-decoration: underline; }
+        .credits-list .label { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; }
+
+        /* Error Styles */
+        #critical-error-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #7f1d1d; color: white; z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div id="critical-error-overlay">
+    <h1>Critical Error</h1>
+    <p id="error-message">A fatal process error has occurred. The studio has been halted to prevent data corruption.</p>
+    <button onclick="location.reload()" class="btn" style="width: auto; padding: 10px 30px;">Refresh Page</button>
+</div>
+
+<div class="container">
+    <h2 style="margin: 0 0 5px 0;">Gizmo Rainbow Studio</h2>
+    <p style="font-size:0.8rem; color:#94a3b8; margin:0 0 5px 0;">3D Asset Encoding & Health Check</p>
+    
+    <button class="credits-btn" id="openCredits">View Studio Credits</button>
+
+    <div class="drop-zone" id="mainDropZone" onclick="document.getElementById('fileInput').click()">
+        <strong>1. Load Asset</strong><br>
+        <span style="font-size:0.8rem; color: #94a3b8;">Supports GLB, STL, or FBX (with or without animations!)</span>
+        <input type="file" id="fileInput" accept=".glb,.stl,.fbx" style="display:none">
+    </div>
+
+    <div id="health-status">
+        <div class="dot" id="status-dot"></div>
+        <span id="status-text">Awaiting Asset...</span>
+    </div>
+
+    <div id="preview-area" style="display:none;">
+        <canvas id="outputCanvas"></canvas>
+        
+        <div class="drop-zone" style="border-color:var(--accent); color:var(--accent); padding: 15px;" onclick="document.getElementById('animInput').click()">
+            <span style="font-weight:bold;">+ Add Motion (.fbx, .glb)</span>
+            <span class="beta-tag">Merge external animations into your scene</span>
+            <input type="file" id="animInput" accept=".fbx,.glb" style="display:none">
+        </div>
+
+        <button id="viewBtn" class="btn">Refresh Preview</button>
+        <button id="downloadBtn" class="btn" style="background:#22c55e">Download RainbowFile</button>
+
+        <div id="viewer-container"></div>
+        
+        <div id="ui-controls" style="display:none;" class="control-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                <div style="flex:1; margin-right: 15px;">
+                    <label style="font-size: 11px; font-weight: bold; color: #64748b;">Lighting Intensity</label>
+                    <input type="range" id="lightSlider" min="0" max="5" step="0.1" value="1.5">
+                </div>
+                <button id="themeToggle" style="padding: 5px 12px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 11px; cursor: pointer; font-weight: bold;">Dark Mode Preview</button>
+            </div>
+
+            <div id="anim-ui" style="display:none;">
+                <div class="slider-group">
+                    <label>Timeline Scrub</label>
+                    <input type="range" id="timelineSlider" min="0" max="100" value="0">
+                </div>
+                <div style="display:flex; gap: 10px; align-items:center;">
+                    <select id="animSelector" style="flex:1; padding: 5px; border-radius:4px; border:1px solid #ccc;"></select>
+                    <button id="playPauseBtn" style="padding:5px 15px; border-radius:4px; border:1px solid #ccc; background:#eee; cursor:pointer;">Pause</button>
+                </div>
+            </div>
+        </div>
+
+        <h4 style="margin: 25px 0 5px 0; color:var(--primary); text-transform:uppercase; font-size:0.75rem;">Integration Snippet</h4>
+        <div class="code-block" id="gizmoCode">
+import e from"pako";import*as t from"three";import{STLLoader as r}from"three/examples/jsm/loaders/STLLoader.js";import{GLTFLoader as a}from"three/examples/jsm/loaders/GLTFLoader.js";import{FBXLoader as f}from"three/examples/jsm/loaders/FBXLoader.js";let HDR_SZ=5,TYPE_STL=0,TYPE_GLB=1,TYPE_FBX=2;export async function rainbowToGeo(t){let o=await new Promise(e=>{let r=new Image;r.crossOrigin="anonymous",r.onload=()=>e(r),r.src=t}),n=document.createElement("canvas");n.width=o.width,n.height=o.height;let i=n.getContext("2d");i.drawImage(o,0,0);let s=i.getImageData(0,0,o.width,o.height).data,l=new Uint8Array(s.length/4*3);for(let f=0,m=0;f<s.length;f+=4,m+=3)l[m]=s[f],l[m+1]=s[f+1],l[m+2]=s[f+2];let w=new DataView(l.buffer),h=l[0],g=w.getUint32(1,!0),p=l.subarray(5,5+g),d=e.inflate(p),y=d.buffer.slice(d.byteOffset,d.byteOffset+d.byteLength);if(0===h){let $=new r().parse(y);return $.rotateX(-Math.PI/2),{type:"stl",geometry:$}}if(1===h){let b=new a;return await new Promise((e,t)=>{b.parse(y,"",t=>e({type:"gltf",gltf:t}),e=>t(e))})}if(2===h){let u=new f;let m=u.parse(y,"");return{type:"fbx",model:m}}throw Error("unknown rainbow type")}
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Vertex Check / Redirect -->
+<div class="modal-overlay" id="vertexCheckModal">
+    <div class="modal">
+        <h3>No Model Data Found</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.4; margin-bottom: 20px;">
+            Are you sure you are using <b>Add Motion</b>? If not, your model must be viewable to export as a RainbowFile!
+        </p>
+        <div class="modal-actions">
+            <button class="modal-btn btn-cancel" id="cancelVertexImport">No, Cancel</button>
+            <button class="modal-btn btn-confirm" id="confirmVertexToMotion">Use Add Motion</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Download/Save -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+        <h3>Save RainbowFile</h3>
+        <div class="rename-input-container">
+            <input type="text" id="rename-input" spellcheck="false" autocomplete="off">
+            <span class="suffix-lock">-RFile.png</span>
+        </div>
+        <div class="tos-container">
+            <label class="tos-checkbox-wrapper">
+                <input type="checkbox" id="tos-check">
+                <span class="tos-text">I agree to the Terms of Service. I confirm that this asset does not violate copyrights and is intended for use within compatible Gizmo environments.</span>
+            </label>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn btn-cancel" id="cancelRename">Cancel</button>
+            <button class="modal-btn btn-confirm" id="confirmRename" disabled>Download</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Credits -->
+<div class="modal-overlay" id="creditsOverlay">
+    <div class="modal">
+        <h3>Studio Credits</h3>
+        <ul class="credits-list">
+            <li>
+                <span class="label">Platform</span>
+                <a href="https://gizmo.party" target="_blank">Gizmo</a>
+            </li>
+            <li>
+                <span class="label">3D Engine</span>
+                <a href="https://threejs.org" target="_blank">three.js</a>
+            </li>
+            <li>
+                <span class="label">Compression</span>
+                <a href="https://github.com/nodeca/pako" target="_blank">pako.min.js</a>
+            </li>
+            <li>
+                <span class="label">Contributor</span>
+                <a href="https://gizmo.party/bboonstra" target="_blank">Ben Boonstra</a>
+            </li>
+        </ul>
+        <div class="modal-actions">
+            <button class="modal-btn btn-cancel" style="width:100%" id="closeCredits">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let mixer, activeModel, currentClips = [], activeAction;
+    let scene, camera, renderer, controls, mainLight;
+    let clock = new THREE.Clock();
+    let animPaused = false;
+    let isScrubbing = false;
+    let isDarkMode = false;
+    let currentFileName = "model";
+    let pendingAnimBuffer = null;
+    let pendingAnimName = "";
+
+    const canvas = document.getElementById('outputCanvas');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const modal = document.getElementById('modalOverlay');
+    const vertexModal = document.getElementById('vertexCheckModal');
+    const creditsModal = document.getElementById('creditsOverlay');
+    const renameInput = document.getElementById('rename-input');
+    const tosCheck = document.getElementById('tos-check');
+    const confirmBtn = document.getElementById('confirmRename');
+    const errorOverlay = document.getElementById('critical-error-overlay');
+    const errorMessage = document.getElementById('error-message');
+
+    function throwCriticalError(msg) {
+        errorMessage.innerText = msg;
+        errorOverlay.style.display = 'flex';
+        console.error("Critical Halted:", msg);
+    }
+
+    window.onerror = (msg, url, line) => {
+        if (errorOverlay.style.display === 'flex') return;
+        throwCriticalError(`Runtime Exception: ${msg} (at line ${line})`);
+    };
+
+    function updateHealth(type, msg) {
+        statusDot.className = 'dot ' + type;
+        statusText.innerText = msg || (type === 'healthy' ? "Data Integrity: Lossless" : "Error Processing Data");
+    }
+
+    function resetStudio() {
+        if (mixer) { 
+            mixer.stopAllAction(); 
+            const root = mixer.getRoot();
+            if (root) mixer.uncacheRoot(root); 
+            mixer = null; 
+        }
+        if (activeModel && scene) { scene.remove(activeModel); }
+        activeModel = null;
+        activeAction = null;
+        currentClips = [];
+        document.getElementById('anim-ui').style.display = 'none';
+        document.getElementById('ui-controls').style.display = 'none';
+        document.getElementById('viewer-container').style.display = 'none';
+        updateHealth('waiting', 'Awaiting Asset...');
+    }
+
+    async function rainbowToGeo(url) {
+        try {
+            let o = await new Promise((resolve, reject) => {
+                let r = new Image;
+                r.crossOrigin = "anonymous";
+                r.onload = () => resolve(r);
+                r.onerror = () => reject("Failed to load texture image");
+                r.src = url;
+            }), n = document.createElement("canvas");
+            n.width = o.width, n.height = o.height;
+            let i = n.getContext("2d");
+            i.drawImage(o, 0, 0);
+            let s = i.getImageData(0, 0, o.width, o.height).data,
+                l = new Uint8Array(s.length / 4 * 3);
+            for (let f = 0, m = 0; f < s.length; f += 4, m += 3) 
+                l[m] = s[f], l[m+1] = s[f+1], l[m+2] = s[f+2];
+            let w = new DataView(l.buffer),
+                h = l[0],
+                g = w.getUint32(1, !0),
+                p = l.subarray(5, 5 + g),
+                d = pako.inflate(p),
+                y = d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength);
+            
+            if (0 === h) {
+                let $ = new THREE.STLLoader().parse(y);
+                return $.rotateX(-Math.PI / 2), { type: "stl", geometry: $ }
+            }
+            if (1 === h) {
+                let b = new THREE.GLTFLoader();
+                return await new Promise((e, t) => {
+                    b.parse(y, "", t => e({ type: "gltf", gltf: t }), e => t(e))
+                })
+            }
+            if (2 === h) {
+                let fbx = new THREE.FBXLoader().parse(y, "");
+                return { type: "fbx", model: fbx }
+            }
+            throw Error("Unknown rainbow type")
+        } catch (e) {
+            throwCriticalError("Decoding Error: " + e.message);
+        }
+    }
+
+    function triggerAutoPreview() {
+        document.getElementById('viewer-container').style.display = 'block';
+        document.getElementById('ui-controls').style.display = 'block';
+        initScene();
+        rainbowToGeo(canvas.toDataURL()).then(loadIntoScene).catch(e => throwCriticalError(e));
+    }
+
+    // Main Asset Loader
+    document.getElementById('fileInput').onchange = async (e) => {
+        try {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const buffer = await file.arrayBuffer();
+            const ext = file.name.toLowerCase();
+            
+            // Check for vertices (visible geometry)
+            const loader = ext.endsWith('.fbx') ? new THREE.FBXLoader() : 
+                           ext.endsWith('.stl') ? new THREE.STLLoader() : new THREE.GLTFLoader();
+            
+            let hasMesh = false;
+            let result;
+
+            if (ext.endsWith('.stl')) {
+                hasMesh = true; // STL is only geometry
+            } else {
+                result = await new Promise((res, rej) => {
+                    loader.parse(buffer, '', (obj) => res(obj), (err) => rej(err));
+                });
+                const sceneRoot = result.scene || result;
+                sceneRoot.traverse(node => {
+                    if (node.isMesh && node.geometry.attributes.position.count > 0) hasMesh = true;
+                });
+            }
+
+            if (!hasMesh) {
+                pendingAnimBuffer = buffer;
+                pendingAnimName = file.name;
+                vertexModal.style.display = 'flex';
+                e.target.value = ''; // Clear input
+                return;
+            }
+
+            processMainAsset(file, buffer);
+        } catch (err) {
+            throwCriticalError("Encoding Error: " + err.message);
+        }
+    };
+
+    function processMainAsset(file, buffer) {
+        resetStudio();
+        currentFileName = file.name.replace(/\.[^/.]+$/, "").replace(/\s+/g, '_');
+        const compressed = pako.deflate(new Uint8Array(buffer));
+        const full = new Uint8Array(5 + compressed.length);
+        
+        const ext = file.name.toLowerCase();
+        if (ext.endsWith('.stl')) full[0] = 0;
+        else if (ext.endsWith('.fbx')) full[0] = 2;
+        else full[0] = 1;
+
+        new DataView(full.buffer).setUint32(1, compressed.length, true);
+        full.set(compressed, 5);
+        
+        const side = Math.ceil(Math.sqrt(full.length / 3));
+        canvas.width = canvas.height = side;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(side, side);
+        for (let i = 0, j = 0; i < full.length; i += 3, j += 4) {
+            imgData.data[j] = full[i];
+            imgData.data[j+1] = full[i+1] || 0;
+            imgData.data[j+2] = full[i+2] || 0;
+            imgData.data[j+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        updateHealth('healthy', 'Asset Encoded to RF');
+        document.getElementById('preview-area').style.display = 'block';
+        triggerAutoPreview();
+    }
+
+    // Vertex Modal Actions
+    document.getElementById('cancelVertexImport').onclick = () => {
+        vertexModal.style.display = 'none';
+        pendingAnimBuffer = null;
+    };
+
+    document.getElementById('confirmVertexToMotion').onclick = () => {
+        vertexModal.style.display = 'none';
+        if (activeModel) {
+            processAnimationBuffer(pendingAnimBuffer, pendingAnimName);
+        } else {
+            // No model loaded, ask to load one first
+            statusText.innerText = "Please load a model first to apply this animation!";
+            statusDot.className = 'dot error';
+        }
+        pendingAnimBuffer = null;
+    };
+
+    // Animation Loader
+    document.getElementById('animInput').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !activeModel) return;
+        const buffer = await file.arrayBuffer();
+        processAnimationBuffer(buffer, file.name);
+    };
+
+    function processAnimationBuffer(buffer, name) {
+        try {
+            const loader = name.toLowerCase().endsWith('.fbx') ? new THREE.FBXLoader() : new THREE.GLTFLoader();
+            loader.parse(buffer, '', (res) => {
+                const anims = (res.animations && res.animations.length) ? res.animations : (res.gltf?.animations || []);
+                if (anims.length > 0) {
+                    currentClips = anims;
+                    setupAnimationUI();
+                } else {
+                    statusText.innerText = "No animations found in file.";
+                    statusDot.className = 'dot error';
+                }
+            });
+        } catch (err) {
+            throwCriticalError("Animation Error: " + err.message);
+        }
+    }
+
+    function initScene() {
+        if (renderer) return;
+        const container = document.getElementById('viewer-container');
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf1f5f9);
+        camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 20000);
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        mainLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        mainLight.position.set(5, 10, 7);
+        scene.add(mainLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        animate();
+    }
+
+    function loadIntoScene(res) {
+        try {
+            if (mixer) {
+                mixer.stopAllAction();
+                mixer.uncacheRoot(mixer.getRoot());
+                mixer = null;
+            }
+            if (activeModel) scene.remove(activeModel);
+            
+            let model;
+            let clipsFound = [];
+
+            if (res.type === 'stl') {
+                model = new THREE.Mesh(res.geometry, new THREE.MeshStandardMaterial({color: 0x6366f1, roughness: 0.5}));
+            } else if (res.type === 'fbx') {
+                model = res.model;
+                if (res.model.animations && res.model.animations.length > 0) clipsFound = res.model.animations;
+            } else {
+                model = res.gltf.scene;
+                if (res.gltf.animations && res.gltf.animations.length > 0) clipsFound = res.gltf.animations;
+            }
+            
+            model.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0) {
+                const scale = 10 / maxDim;
+                model.scale.multiplyScalar(scale);
+            }
+            
+            model.updateMatrixWorld(true);
+            const newBox = new THREE.Box3().setFromObject(model);
+            const center = newBox.getCenter(new THREE.Vector3());
+            
+            activeModel = model;
+            scene.add(activeModel);
+            
+            controls.target.copy(center);
+            camera.position.set(center.x, center.y + 5, center.z + 15);
+            controls.update();
+
+            if (clipsFound.length > 0) {
+                currentClips = clipsFound;
+                setupAnimationUI();
+            } else {
+                currentClips = [];
+                document.getElementById('anim-ui').style.display = 'none';
+            }
+
+        } catch (err) {
+            throwCriticalError("Scene Loading Error: " + err.message);
+        }
+    }
+
+    function setupAnimationUI() {
+        if (!activeModel) return;
+        if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); }
+        
+        mixer = new THREE.AnimationMixer(activeModel);
+        const selector = document.getElementById('animSelector');
+        selector.innerHTML = '';
+        currentClips.forEach((clip, i) => {
+            const opt = document.createElement('option');
+            opt.value = i; opt.innerText = clip.name || `Clip ${i+1}`;
+            selector.appendChild(opt);
+        });
+        document.getElementById('anim-ui').style.display = 'block';
+        playClip(0);
+    }
+
+    function playClip(index) {
+        if (!mixer || !currentClips[index]) return;
+        if (activeAction) activeAction.stop();
+        activeAction = mixer.clipAction(currentClips[index]);
+        activeAction.play();
+        document.getElementById('timelineSlider').max = currentClips[index].duration;
+    }
+
+    document.getElementById('openCredits').onclick = () => { creditsModal.style.display = 'flex'; };
+    document.getElementById('closeCredits').onclick = () => { creditsModal.style.display = 'none'; };
+    
+    document.getElementById('downloadBtn').onclick = () => {
+        modal.style.display = 'flex';
+        renameInput.value = currentFileName.replace(/\s+/g, '_');
+        tosCheck.checked = false;
+        confirmBtn.disabled = true;
+    };
+
+    renameInput.oninput = function() { this.value = this.value.replace(/\s+/g, '_'); };
+    tosCheck.onchange = () => { confirmBtn.disabled = !tosCheck.checked; };
+    document.getElementById('cancelRename').onclick = () => { modal.style.display = 'none'; };
+
+    document.getElementById('confirmRename').onclick = () => {
+        const finalName = (renameInput.value || "model") + "-RFile.png";
+        const a = document.createElement('a');
+        a.download = finalName;
+        a.href = canvas.toDataURL();
+        a.click();
+        modal.style.display = 'none';
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    };
+
+    document.getElementById('viewBtn').onclick = () => { triggerAutoPreview(); };
+
+    document.getElementById('lightSlider').oninput = (e) => {
+        if (mainLight) mainLight.intensity = parseFloat(e.target.value);
+    };
+
+    document.getElementById('themeToggle').onclick = function() {
+        isDarkMode = !isDarkMode;
+        if (scene) scene.background = new THREE.Color(isDarkMode ? 0x0f172a : 0xf1f5f9);
+        this.innerText = isDarkMode ? 'White Mode Preview' : 'Dark Mode Preview';
+        this.style.background = isDarkMode ? '#1e293b' : '#f8fafc';
+        this.style.color = isDarkMode ? '#f8fafc' : '#1e293b';
+    };
+
+    document.getElementById('timelineSlider').onmousedown = () => isScrubbing = true;
+    document.getElementById('timelineSlider').onmouseup = () => isScrubbing = false;
+    document.getElementById('timelineSlider').oninput = (e) => {
+        if (mixer && activeAction) mixer.setTime(parseFloat(e.target.value));
+    };
+
+    document.getElementById('playPauseBtn').onclick = function() {
+        animPaused = !animPaused;
+        this.innerText = animPaused ? 'Play' : 'Pause';
+    };
+
+    document.getElementById('animSelector').onchange = (e) => playClip(e.target.value);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (mixer && !animPaused && !isScrubbing) {
+            mixer.update(clock.getDelta());
+            if (activeAction) {
+                document.getElementById('timelineSlider').value = activeAction.time;
+            }
+        } else { clock.getDelta(); }
+        if (renderer) renderer.render(scene, camera);
+    }
+
+    document.getElementById('gizmoCode').onclick = function() {
+        const dummy = document.createElement("textarea");
+        document.body.appendChild(dummy);
+        dummy.value = this.innerText;
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+        statusText.innerText = "Code Copied!";
+        setTimeout(() => statusText.innerText = "Data Integrity: Lossless", 2000);
+    };
+</script>
+</body>
+</html>
